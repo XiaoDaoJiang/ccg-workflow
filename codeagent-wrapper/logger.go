@@ -71,6 +71,7 @@ func NewLogger() (*Logger, error) {
 
 // NewLoggerWithSuffix creates a logger with an optional suffix in the filename.
 // Useful for tests that need isolated log files within the same process.
+// Log directory can be customized via CODEAGENT_LOG_DIR environment variable.
 func NewLoggerWithSuffix(suffix string) (*Logger, error) {
 	pid := os.Getpid()
 	filename := fmt.Sprintf("%s-%d", primaryLogPrefix(), pid)
@@ -83,7 +84,13 @@ func NewLoggerWithSuffix(suffix string) (*Logger, error) {
 	}
 	filename += ".log"
 
-	path := filepath.Clean(filepath.Join(os.TempDir(), filename))
+	// Use custom log directory if specified, otherwise fall back to temp dir
+	logDir := os.Getenv("CODEAGENT_LOG_DIR")
+	if logDir == "" {
+		logDir = os.TempDir()
+	}
+
+	path := filepath.Clean(filepath.Join(logDir, filename))
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err

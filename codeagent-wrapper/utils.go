@@ -756,3 +756,44 @@ func extractErrorDetail(message string, maxLen int) string {
 	result := strings.Join(errorLines, " | ")
 	return safeTruncate(result, maxLen)
 }
+
+// toNativePath converts MSYS/Git Bash style paths (e.g., /c/Users/...) to Windows native paths (e.g., C:\Users\...).
+// On non-Windows systems, returns the path unchanged.
+// This ensures compatibility when running in Git Bash or MSYS2 environments on Windows.
+func toNativePath(path string) string {
+	if path == "" {
+		return path
+	}
+
+	// Only convert on Windows
+	if filepath.Separator != '\\' {
+		return path
+	}
+
+	// Check for MSYS/Git Bash style path: /x/... where x is a drive letter
+	if len(path) >= 3 && path[0] == '/' && isLetter(path[1]) && path[2] == '/' {
+		// Convert /c/Users/... to C:\Users\...
+		driveLetter := strings.ToUpper(string(path[1]))
+		rest := path[2:] // includes leading /
+		// Replace forward slashes with backslashes
+		rest = strings.ReplaceAll(rest, "/", "\\")
+		return driveLetter + ":" + rest
+	}
+
+	// Also handle /x at root (e.g., /c -> C:\)
+	if len(path) == 2 && path[0] == '/' && isLetter(path[1]) {
+		return strings.ToUpper(string(path[1])) + ":\\"
+	}
+
+	// For other paths, just normalize separators if they contain forward slashes
+	if strings.Contains(path, "/") {
+		return strings.ReplaceAll(path, "/", "\\")
+	}
+
+	return path
+}
+
+// isLetter checks if a byte is an ASCII letter (a-z or A-Z)
+func isLetter(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}

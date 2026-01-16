@@ -168,11 +168,16 @@ func run() (exitCode int) {
 					for _, entry := range errors {
 						fmt.Fprintln(os.Stderr, entry)
 					}
-					fmt.Fprintf(os.Stderr, "Log file: %s (deleted)\n", logger.Path())
 				}
 			}
-			if err := logger.RemoveLogFile(); err != nil && !os.IsNotExist(err) {
-				// Silently ignore removal errors
+			// Keep log file if CODEAGENT_KEEP_LOG is set, otherwise delete it
+			if envFlagEnabled("CODEAGENT_KEEP_LOG") {
+				fmt.Fprintf(os.Stderr, "Log file: %s\n", logger.Path())
+			} else {
+				fmt.Fprintf(os.Stderr, "Log file: %s (deleted)\n", logger.Path())
+				if err := logger.RemoveLogFile(); err != nil && !os.IsNotExist(err) {
+					// Silently ignore removal errors
+				}
 			}
 		}
 	}()

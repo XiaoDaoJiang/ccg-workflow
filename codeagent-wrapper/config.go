@@ -146,7 +146,7 @@ func parseParallelConfig(data []byte) (*ParallelConfig, error) {
 			case "id":
 				task.ID = value
 			case "workdir":
-				task.WorkDir = value
+				task.WorkDir = toNativePath(value)
 			case "session_id":
 				task.SessionID = value
 				task.Mode = "resume"
@@ -253,14 +253,14 @@ func parseArgs() (*Config, error) {
 		cfg.Task = args[2]
 		cfg.ExplicitStdin = (args[2] == "-")
 		if len(args) > 3 {
-			cfg.WorkDir = args[3]
+			cfg.WorkDir = toNativePath(args[3])
 		}
 	} else {
 		cfg.Mode = "new"
 		cfg.Task = args[0]
 		cfg.ExplicitStdin = (args[0] == "-")
 		if len(args) > 1 {
-			cfg.WorkDir = args[1]
+			cfg.WorkDir = toNativePath(args[1])
 		}
 	}
 
