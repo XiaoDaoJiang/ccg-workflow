@@ -7,6 +7,250 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.39] - 2026-01-16
+
+### ✨ 新功能
+
+**新增 `/ccg:plan` 和 `/ccg:execute` 命令 - 分离规划与执行**
+
+将原有的 workflow 拆分为两个独立命令，实现规划与执行的解耦：
+
+#### `/ccg:plan` - 多模型协作规划
+- **Phase 1**: 上下文全量检索
+  - 强制调用 `mcp__ace-tool__enhance_prompt` 增强提示词
+  - 调用 `mcp__ace-tool__search_context` 检索项目上下文
+- **Phase 2**: 多模型协作分析
+  - Codex + Gemini 并行分析，交叉验证
+  - 可选：双模型产出"计划草案"降低遗漏风险
+  - 生成 Step-by-step 实施计划
+- **计划交付**：保存至 `.claude/plan/<功能名>.md`，提示用户审查或执行
+- **不问 Y/N**：只展示计划，让用户决定下一步
+
+#### `/ccg:execute` - 多模型协作执行
+- **Phase 0**: 读取计划文件，提取 SESSION_ID
+- **Phase 1**: 上下文快速检索（使用 MCP 工具，禁止手动 find/ls）
+- **Phase 3**: 原型获取（Codex/Gemini 根据任务类型路由）
+- **Phase 4**: 编码实施（Claude 重构"脏原型"为生产级代码）
+- **Phase 5**: 审计与交付（双模型 Code Review）
+
+#### 关键设计
+- **代码主权**：Codex/Gemini 只输出 Unified Diff Patch，Claude 负责实际修改
+- **SESSION_ID 交接**：plan 生成的 SESSION_ID 可传递给 execute 复用上下文
+- **信任规则**：后端逻辑以 Codex 为准，前端设计以 Gemini 为准
+
+### 🐛 Bug 修复
+
+**修复 `/ccg:init` 不调用子智能体的问题**
+
+- 原模板只是描述性地说"调用子智能体"，没有给出具体调用语法
+- 现在添加了明确的 Task 工具调用格式
+- 先调用 `get-current-datetime` 获取时间戳
+- 再调用 `init-architect` 执行完整扫描
+
+### 📝 文档更新
+
+- 命令总数从 14 个增加到 16 个
+- 更新 CLAUDE.md 文档反映新命令
+- 更新模板文件清单
+
+---
+
+## [1.7.38] - 2026-01-16
+
+### 🐛 Bug 修复
+
+**修复更新工作流逻辑问题**
+
+#### 问题背景
+
+用户反馈：当通过 npm 全局安装且当前版本已是最新版本时，系统仍然提示用户运行 `npm install -g ccg-workflow@latest`，导致用户困惑。
+
+**场景重现**：
+```
+当前版本: v1.7.37
+最新版本: v1.7.37
+本地工作流: v1.7.25
+
+检测到本地工作流版本(v1.7.25)低于当前版本(v1.7.37)，是否更新? Yes
+⚠️  检测到你是通过 npm 全局安装的
+推荐的更新方式:
+npm install -g ccg-workflow@latest  ← 用户困惑：明明已经是最新版本了
+```
+
+#### 修复方案
+
+在 `src/commands/update.ts:196-237` 中添加判断逻辑：
+
+**修复前**：
+```typescript
+if (isGlobalInstall) {
+  // 总是提示用户运行 npm install -g
+}
+```
+
+**修复后**：
+```typescript
+// 如果全局安装且仅工作流需要更新（包已是最新）
+if (isGlobalInstall && !isNewVersion) {
+  console.log('✓ 当前包版本已是最新')
+  console.log('⚙️  仅需更新工作流文件')
+  // 继续更新工作流，不提示更新包
+}
+// 如果全局安装且包有新版本
+else if (isGlobalInstall && isNewVersion) {
+  console.log('⚠️  检测到你是通过 npm 全局安装的')
+  console.log('推荐的更新方式: npm install -g ccg-workflow@latest')
+  // 提示用户更新包
+}
+```
+
+#### 修复后的用户体验
+
+**场景 1：包已是最新，仅工作流需要更新**
+```
+当前版本: v1.7.38
+最新版本: v1.7.38
+本地工作流: v1.7.25
+
+检测到本地工作流版本(v1.7.25)低于当前版本(v1.7.38)，是否更新? Yes
+ℹ️  检测到你是通过 npm 全局安装的
+✓ 当前包版本已是最新 (v1.7.38)
+⚙️  仅需更新工作流文件
+```
+
+**场景 2：包有新版本**
+```
+当前版本: v1.7.37
+最新版本: v1.7.38
+
+确认要更新到 v1.7.38 吗? Yes
+⚠️  检测到你是通过 npm 全局安装的
+推荐的更新方式:
+npm install -g ccg-workflow@latest
+```
+
+### 📦 版本更新
+
+- **ccg-workflow**: 1.7.37 → 1.7.38
+
+---
+
+## [1.7.37] - 2026-01-16
+
+### ✨ 新功能
+
+**添加 ace-tool-rs MCP 支持**
+
+#### 背景
+
+社区用户反馈希望支持 [ace-tool-rs](https://github.com/missdeer/ace-tool-rs)，这是 ace-tool 的 Rust 实现版本，具有以下优势：
+- 更轻量（二进制文件更小）
+- 更快速（Rust 性能优势）
+- 更低的资源占用
+
+#### 实现内容
+
+**1. 添加 `installAceToolRs` 函数**
+
+在 `src/utils/installer.ts` 中添加 ace-tool-rs 安装函数：
+```typescript
+export async function installAceToolRs(config: AceToolConfig): Promise<...> {
+  // 使用 npx ace-tool-rs 命令
+  // 添加 RUST_LOG=info 环境变量
+}
+```
+
+**2. 更新 i18n 文本**
+
+添加中英文翻译：
+- `init:aceToolRs.title` - "ace-tool-rs MCP 配置"
+- `init:aceToolRs.description` - "Rust 实现的 ace-tool，更轻量、更快速"
+- `init:aceToolRs.installing` - "正在配置 ace-tool-rs MCP..."
+- `init:aceToolRs.failed` - "ace-tool-rs 配置失败（可稍后手动配置）"
+
+**3. 修改 init 命令**
+
+在初始化时提供 3 个选项：
+- `ace-tool` (Node.js 实现)
+- `ace-tool-rs` **(推荐)** (Rust 实现)
+- 跳过
+
+默认选项改为 `ace-tool-rs`。
+
+**4. 修改 config-mcp 命令**
+
+在 MCP 配置命令中添加选项：
+- 安装/更新 ace-tool MCP (Node.js 实现)
+- 安装/更新 ace-tool-rs MCP **(推荐)** (Rust 实现)
+- 卸载 MCP 配置
+
+#### 使用方式
+
+**初始化时选择**：
+```bash
+npx ccg-workflow
+
+# 选择 MCP 工具
+? 选择 MCP 工具
+  ace-tool (Node.js 实现) - 一键安装，含 Prompt 增强 + 代码检索
+❯ ace-tool-rs (推荐) (Rust 实现) - 更轻量、更快速
+  跳过 - 稍后手动配置（可选 auggie 等其他 MCP）
+```
+
+**后续配置**：
+```bash
+npx ccg-workflow config mcp
+
+# 选择操作
+? 选择操作
+  ➜ 安装/更新 ace-tool MCP (Node.js 实现)
+❯ ➜ 安装/更新 ace-tool-rs MCP (推荐) (Rust 实现)
+  ✕ 卸载 MCP 配置
+  返回
+```
+
+#### MCP 配置格式
+
+**ace-tool-rs 配置**：
+```json
+{
+  "mcpServers": {
+    "ace-tool": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "ace-tool-rs",
+        "--base-url", "https://api.example.com",
+        "--token", "your-token-here"
+      ],
+      "env": {
+        "RUST_LOG": "info"
+      }
+    }
+  }
+}
+```
+
+#### 重要说明
+
+**MCP 工具名称统一**：
+- ace-tool 和 ace-tool-rs 都注册为 **同一个 MCP 服务器名称** `"ace-tool"`
+- 提供 **相同的工具接口**：
+  - `mcp__ace-tool__search_context` - 代码检索
+  - `mcp__ace-tool__enhance_prompt` - Prompt 增强
+- **无需修改提示词模板**：两个实现可以无缝切换
+- AI 会自动调用 `mcp__ace-tool__*` 工具，无论底层使用哪个实现
+
+**选择建议**：
+- **ace-tool-rs (推荐)**：Rust 实现，更轻量、更快速、资源占用更低
+- **ace-tool**：Node.js 实现，兼容性更好，适合特殊环境
+
+### 📦 版本更新
+
+- **ccg-workflow**: 1.7.36 → 1.7.37
+
+---
+
 ## [1.7.36] - 2026-01-16
 
 ### 🐛 Bug 修复
